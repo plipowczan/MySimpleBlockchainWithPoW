@@ -42,7 +42,7 @@ namespace MySimpleBlockchainWithPoW.Blockchain
         public Blockchain()
         {
             this.NodeId = Guid.NewGuid().ToString().Replace("-", "");
-            this.CreateNewBlock(100, "1");
+            this.CreateNewBlock(100, string.Empty);
         }
 
         #endregion
@@ -62,15 +62,10 @@ namespace MySimpleBlockchainWithPoW.Blockchain
             while (currentIndex < blockList.Count)
             {
                 var block = blockList.ElementAt(currentIndex);
-                Debug.WriteLine($"{lastBlock}");
-                Debug.WriteLine($"{block}");
-                Debug.WriteLine("----------------------------");
 
-                //Check that the hash of the block is correct
                 if (block.PreviousHash != this.GetHash(lastBlock))
                     return false;
 
-                //Check that the Proof of Work is correct
                 if (!this.IsValidNonce(lastBlock.Nonce, block.Nonce, lastBlock.PreviousHash))
                     return false;
 
@@ -162,12 +157,11 @@ namespace MySimpleBlockchainWithPoW.Blockchain
 
         #region Public methods
 
-        //web server calls
         internal string Mine()
         {
             int nonce = this.FindNonce(this.LastBlock.Nonce, this.LastBlock.PreviousHash);
 
-            this.CreateTransaction(from: "0", to: this.NodeId, amount: 1);
+            this.CreateTransaction("0", this.NodeId, 1);
             Block block = this.CreateNewBlock(nonce /*, _lastBlock.PreviousHash*/);
 
             var response = new
