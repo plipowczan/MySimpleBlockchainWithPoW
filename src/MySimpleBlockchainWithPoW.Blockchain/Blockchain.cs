@@ -55,13 +55,13 @@ namespace MySimpleBlockchainWithPoW.Blockchain
 
         #region Private methods
 
-        private bool IsValidBlockList(List<Block> blockList)
+        private bool IsValidBlockList(List<Block> pBlockList)
         {
-            Block lastBlock = blockList.First();
+            Block lastBlock = pBlockList.First();
             int currentIndex = 1;
-            while (currentIndex < blockList.Count)
+            while (currentIndex < pBlockList.Count)
             {
-                var block = blockList.ElementAt(currentIndex);
+                var block = pBlockList.ElementAt(currentIndex);
 
                 if (block.PreviousHash != this.GetHash(lastBlock))
                     return false;
