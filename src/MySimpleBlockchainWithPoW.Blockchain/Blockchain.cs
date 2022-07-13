@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using Newtonsoft.Json;
 
 #endregion
@@ -83,8 +84,8 @@ namespace MySimpleBlockchainWithPoW.Blockchain
             foreach (Node node in this.nodes)
             {
                 var url = new Uri(node.Address, "/blockchain");
-                var request = (HttpWebRequest) WebRequest.Create(url);
-                var response = (HttpWebResponse) request.GetResponse();
+                var httpClient = new HttpClient();
+                var response = httpClient.GetAsync(url).Result;
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
@@ -93,20 +94,13 @@ namespace MySimpleBlockchainWithPoW.Blockchain
                         blockList = new List<Block>(),
                         length = 0
                     };
-                    Stream stream = response.GetResponseStream();
-                    if (stream != null)
-                    {
-                        string json = new StreamReader(stream).ReadToEnd();
-                        var data = JsonConvert.DeserializeAnonymousType(json, model);
+                    Stream stream = response.Content.ReadAsStreamAsync().Result;
+                    string json = new StreamReader(stream).ReadToEnd();
+                    var data = JsonConvert.DeserializeAnonymousType(json, model);
 
-                        if (data.blockList.Count > this.blockList.Count && this.IsValidBlockList(data.blockList))
-                        {
-                            newChain = data.blockList;
-                        }
-                    }
-                    else
+                    if (data != null && data.blockList.Count > this.blockList.Count && this.IsValidBlockList(data.blockList))
                     {
-                        Debug.WriteLine("Unable to get response stream");
+                        newChain = data.blockList;
                     }
                 }
             }

@@ -5,6 +5,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 #endregion
 
@@ -18,12 +19,7 @@ namespace MySimpleBlockchainWithPoW.Blockchain
         {
             if (obj == null)
                 return null;
-            BinaryFormatter bf = new BinaryFormatter();
-            using (MemoryStream ms = new MemoryStream())
-            {
-                bf.Serialize(ms, obj);
-                return ms.ToArray();
-            }
+            return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(obj));
         }
 
         #endregion
@@ -32,7 +28,7 @@ namespace MySimpleBlockchainWithPoW.Blockchain
 
         public static string GetSha256Hash(object obj)
         {
-            var sha256 = new SHA256Managed();
+            var sha256 = SHA256.Create();
             var hashBuilder = new StringBuilder();
 
             // zamiana obiektu na tablicę bajtów
