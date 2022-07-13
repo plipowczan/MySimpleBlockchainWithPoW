@@ -2,229 +2,216 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using Newtonsoft.Json;
 
 #endregion
 
-namespace MySimpleBlockchainWithPoW.Blockchain
+namespace MySimpleBlockchainWithPoW.Blockchain;
+
+public class Blockchain
 {
-    public class Blockchain
+    #region Constructors
+
+    //ctor
+    public Blockchain()
     {
-        #region Fields
+        NodeId = Guid.NewGuid().ToString().Replace("-", "");
+        CreateNewBlock(100, string.Empty);
+    }
 
-        private readonly List<Transaction> currentTransactionList = new List<Transaction>();
+    #endregion
 
-        private List<Block> blockList = new List<Block>();
+    #region Private properties
 
-        private readonly List<Node> nodes = new List<Node>();
+    private Block LastBlock
+    {
+        get { return blockList.Last(); }
+    }
 
-        #endregion
+    #endregion
 
-        #region Private properties
+    #region Properties
 
-        private Block LastBlock
+    public string NodeId { get; }
+
+    #endregion
+
+    #region Fields
+
+    private readonly List<Transaction> currentTransactionList = new();
+
+    private List<Block> blockList = new();
+
+    private readonly List<Node> nodes = new();
+
+    #endregion
+
+    #region Private methods
+
+    private bool IsValidBlockList(List<Block> pBlockList)
+    {
+        var lastBlock = pBlockList.First();
+        var currentIndex = 1;
+        while (currentIndex < pBlockList.Count)
         {
-            get
+            var block = pBlockList.ElementAt(currentIndex);
+
+            if (block.PreviousHash != GetHash(lastBlock))
+                return false;
+
+            if (!IsValidNonce(lastBlock.Nonce, block.Nonce, lastBlock.PreviousHash))
+                return false;
+
+            lastBlock = block;
+            currentIndex++;
+        }
+
+        return true;
+    }
+
+    private bool ResolveConflicts()
+    {
+        List<Block> newChain = null;
+
+        foreach (var node in nodes)
+        {
+            var url = new Uri(node.Address, "/blockchain");
+            var httpClient = new HttpClient();
+            var response = httpClient.GetAsync(url).Result;
+
+            if (response.StatusCode == HttpStatusCode.OK)
             {
-                return this.blockList.Last();
+                var model = new
+                {
+                    blockList = new List<Block>(),
+                    length = 0
+                };
+                var stream = response.Content.ReadAsStreamAsync().Result;
+                var json = new StreamReader(stream).ReadToEnd();
+                var data = JsonConvert.DeserializeAnonymousType(json, model);
+
+                if (data != null && data.blockList.Count > blockList.Count && IsValidBlockList(data.blockList))
+                    newChain = data.blockList;
             }
         }
 
-        #endregion
-
-        #region Constructors
-
-        //ctor
-        public Blockchain()
+        if (newChain != null)
         {
-            this.NodeId = Guid.NewGuid().ToString().Replace("-", "");
-            this.CreateNewBlock(100, string.Empty);
-        }
-
-        #endregion
-
-        #region Properties
-
-        public string NodeId { get; }
-
-        #endregion
-
-        #region Private methods
-
-        private bool IsValidBlockList(List<Block> pBlockList)
-        {
-            Block lastBlock = pBlockList.First();
-            int currentIndex = 1;
-            while (currentIndex < pBlockList.Count)
-            {
-                var block = pBlockList.ElementAt(currentIndex);
-
-                if (block.PreviousHash != this.GetHash(lastBlock))
-                    return false;
-
-                if (!this.IsValidNonce(lastBlock.Nonce, block.Nonce, lastBlock.PreviousHash))
-                    return false;
-
-                lastBlock = block;
-                currentIndex++;
-            }
-
+            blockList = newChain;
             return true;
         }
 
-        private bool ResolveConflicts()
-        {
-            List<Block> newChain = null;
-
-            foreach (Node node in this.nodes)
-            {
-                var url = new Uri(node.Address, "/blockchain");
-                var request = (HttpWebRequest) WebRequest.Create(url);
-                var response = (HttpWebResponse) request.GetResponse();
-
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    var model = new
-                    {
-                        blockList = new List<Block>(),
-                        length = 0
-                    };
-                    Stream stream = response.GetResponseStream();
-                    if (stream != null)
-                    {
-                        string json = new StreamReader(stream).ReadToEnd();
-                        var data = JsonConvert.DeserializeAnonymousType(json, model);
-
-                        if (data.blockList.Count > this.blockList.Count && this.IsValidBlockList(data.blockList))
-                        {
-                            newChain = data.blockList;
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine("Unable to get response stream");
-                    }
-                }
-            }
-
-            if (newChain != null)
-            {
-                this.blockList = newChain;
-                return true;
-            }
-
-            return false;
-        }
-
-        private Block CreateNewBlock(int nonce, string previousHash = null)
-        {
-            var block = new Block(this.blockList.Count, DateTime.UtcNow, nonce,
-                                  previousHash ?? this.GetHash(this.blockList.Last()),
-                                  this.currentTransactionList.ToList());
-
-            this.currentTransactionList.Clear();
-            this.blockList.Add(block);
-            return block;
-        }
-
-        private int FindNonce(int lastNonce, string previousHash)
-        {
-            int nonce = 0;
-            while (!this.IsValidNonce(lastNonce, nonce, previousHash))
-                nonce++;
-
-            return nonce;
-        }
-
-        private bool IsValidNonce(int lastNonce, int nonce, string previousHash)
-        {
-            string guess = $"{lastNonce}{nonce}{previousHash}";
-            string result = Helper.GetSha256Hash(guess);
-            return result.StartsWith("000");
-        }
-
-        private string GetHash(Block block)
-        {
-            string blockText = JsonConvert.SerializeObject(block);
-            return Helper.GetSha256Hash(blockText);
-        }
-
-        #endregion
-
-        #region Public methods
-
-        internal string Mine()
-        {
-            int nonce = this.FindNonce(this.LastBlock.Nonce, this.LastBlock.PreviousHash);
-
-            this.CreateTransaction("0", this.NodeId, 1);
-            Block block = this.CreateNewBlock(nonce /*, _lastBlock.PreviousHash*/);
-
-            var response = new
-            {
-                Message = "Nowy blok został wygenerowany",
-                block.Index,
-                Transactions = block.TransactionList.ToArray(),
-                block.Nonce,
-                block.PreviousHash
-            };
-
-            return JsonConvert.SerializeObject(response);
-        }
-
-        internal string GetFullChain()
-        {
-            var response = new
-            {
-                blockList = this.blockList.ToArray(),
-                length = this.blockList.Count
-            };
-
-            return JsonConvert.SerializeObject(response);
-        }
-
-        internal string Consensus()
-        {
-            bool replaced = this.ResolveConflicts();
-            string message = replaced ? "został zamieniony" : "jest autorytatywny";
-
-            var response = new
-            {
-                Message = $"Nasz blockchain {message}",
-                BlockList = this.blockList
-            };
-
-            return JsonConvert.SerializeObject(response);
-        }
-
-        internal int CreateTransaction(string from, string to, double amount)
-        {
-            var transaction = new Transaction
-            {
-                From = from,
-                To = to,
-                Amount = amount
-            };
-
-            this.currentTransactionList.Add(transaction);
-
-            return this.LastBlock?.Index + 1 ?? 0;
-        }
-
-        public string RegisterNode(string url)
-        {
-            this.nodes.Add(new Node
-            {
-                Address = new Uri($"http://{url}")
-            });
-
-            return JsonConvert.SerializeObject($"Węzeł {url} został zarejestrowany");
-        }
-
-        #endregion
+        return false;
     }
+
+    private Block CreateNewBlock(int nonce, string previousHash = null)
+    {
+        var block = new Block(blockList.Count, DateTime.UtcNow, nonce,
+            previousHash ?? GetHash(blockList.Last()),
+            currentTransactionList.ToList());
+
+        currentTransactionList.Clear();
+        blockList.Add(block);
+        return block;
+    }
+
+    private int FindNonce(int lastNonce, string previousHash)
+    {
+        var nonce = 0;
+        while (!IsValidNonce(lastNonce, nonce, previousHash))
+            nonce++;
+
+        return nonce;
+    }
+
+    private bool IsValidNonce(int lastNonce, int nonce, string previousHash)
+    {
+        var guess = $"{lastNonce}{nonce}{previousHash}";
+        var result = Helper.GetSha256Hash(guess);
+        return result.StartsWith("000");
+    }
+
+    private string GetHash(Block block)
+    {
+        var blockText = JsonConvert.SerializeObject(block);
+        return Helper.GetSha256Hash(blockText);
+    }
+
+    #endregion
+
+    #region Public methods
+
+    internal string Mine()
+    {
+        var nonce = FindNonce(LastBlock.Nonce, LastBlock.PreviousHash);
+
+        CreateTransaction("0", NodeId, 1);
+        var block = CreateNewBlock(nonce /*, _lastBlock.PreviousHash*/);
+
+        var response = new
+        {
+            Message = "Nowy blok został wygenerowany",
+            block.Index,
+            Transactions = block.TransactionList.ToArray(),
+            block.Nonce,
+            block.PreviousHash
+        };
+
+        return JsonConvert.SerializeObject(response);
+    }
+
+    internal string GetFullChain()
+    {
+        var response = new
+        {
+            blockList = blockList.ToArray(),
+            length = blockList.Count
+        };
+
+        return JsonConvert.SerializeObject(response);
+    }
+
+    internal string Consensus()
+    {
+        var replaced = ResolveConflicts();
+        var message = replaced ? "został zamieniony" : "jest autorytatywny";
+
+        var response = new
+        {
+            Message = $"Nasz blockchain {message}",
+            BlockList = blockList
+        };
+
+        return JsonConvert.SerializeObject(response);
+    }
+
+    internal int CreateTransaction(string from, string to, double amount)
+    {
+        var transaction = new Transaction
+        {
+            From = from,
+            To = to,
+            Amount = amount
+        };
+
+        currentTransactionList.Add(transaction);
+
+        return LastBlock?.Index + 1 ?? 0;
+    }
+
+    public string RegisterNode(string url)
+    {
+        nodes.Add(new Node
+        {
+            Address = new Uri($"http://{url}")
+        });
+
+        return JsonConvert.SerializeObject($"Węzeł {url} został zarejestrowany");
+    }
+
+    #endregion
 }
